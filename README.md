@@ -42,4 +42,4 @@ This is a decoupled Node.js/Express backend specifically designed for use with a
 Since this is a decoupled backend, your Vite frontend should use the **Supabase JS SDK** for most operations (fetching products, processing sales) and use the **Backend API** (this project) for administrative tasks like creating new users.
 
 ---
-Built with ⚡ by your friendly AI assistant.
+
