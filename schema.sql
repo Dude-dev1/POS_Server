@@ -167,13 +167,34 @@ CREATE TRIGGER update_settings_updated_at BEFORE UPDATE ON settings FOR EACH ROW
 -- Function to handle new user profile creation
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  resolved_role public.user_role;
 BEGIN
+  resolved_role := CASE UPPER(COALESCE(NEW.raw_user_meta_data->>'role', ''))
+    WHEN 'ADMIN' THEN 'ADMIN'::public.user_role
+    WHEN 'MANAGER' THEN 'MANAGER'::public.user_role
+    WHEN 'CASHIER' THEN 'CASHIER'::public.user_role
+    ELSE 'CASHIER'::public.user_role
+  END;
+
   INSERT INTO public.profiles (id, email, full_name, role)
-  VALUES (NEW.id, NEW.email, NEW.raw_user_meta_data->>'full_name', COALESCE((NEW.raw_user_meta_data->>'role')::user_role, 'CASHIER'::user_role));
+  VALUES (NEW.id, NEW.email, NEW.raw_user_meta_data->>'full_name', resolved_role)
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email,
+    full_name = EXCLUDED.full_name,
+    role = EXCLUDED.role,
+    updated_at = NOW();
+
   RETURN NEW;
+EXCEPTION
+  WHEN OTHERS THEN
+    -- Do not block auth user creation if profile sync fails.
+    RAISE WARNING 'handle_new_user failed for user %: %', NEW.id, SQLERRM;
+    RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
@@ -201,8 +222,10 @@ $$ LANGUAGE sql SECURITY DEFINER;
 
 -- Profiles Policies
 CREATE POLICY "Profiles are viewable by everyone" ON profiles FOR SELECT USING (true);
+CREATE POLICY "Allow inserts for new users" ON profiles FOR INSERT WITH CHECK (true);
 CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
-CREATE POLICY "Admins manage all" ON profiles FOR ALL USING (is_admin());
+CREATE POLICY "Admins can update all profiles" ON profiles FOR UPDATE USING (is_admin());
+CREATE POLICY "Admins can delete all profiles" ON profiles FOR DELETE USING (is_admin());
 
 -- Products Policies
 CREATE POLICY "Products are viewable by everyone" ON products FOR SELECT USING (true);
