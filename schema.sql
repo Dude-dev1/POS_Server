@@ -146,6 +146,18 @@ CREATE TABLE settings (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 13.5. Product Variants Table
+CREATE TABLE product_variants (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  product_id UUID REFERENCES products(id) ON DELETE CASCADE NOT NULL,
+  name TEXT NOT NULL,
+  sku TEXT,
+  price DECIMAL(12,2) NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- 14. Functions & Triggers
 
 -- Trigger to update updated_at
@@ -162,6 +174,7 @@ CREATE TRIGGER update_products_updated_at BEFORE UPDATE ON products FOR EACH ROW
 CREATE TRIGGER update_customers_updated_at BEFORE UPDATE ON customers FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 CREATE TRIGGER update_suppliers_updated_at BEFORE UPDATE ON suppliers FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 CREATE TRIGGER update_purchase_orders_updated_at BEFORE UPDATE ON purchase_orders FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+CREATE TRIGGER update_product_variants_updated_at BEFORE UPDATE ON product_variants FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 CREATE TRIGGER update_settings_updated_at BEFORE UPDATE ON settings FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 -- Function to handle new user profile creation
@@ -213,6 +226,7 @@ ALTER TABLE purchase_orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE product_variants ENABLE ROW LEVEL SECURITY;
 
 -- 14.5 Helper Function for RLS (to avoid recursion)
 CREATE OR REPLACE FUNCTION is_admin()
@@ -261,6 +275,24 @@ CREATE POLICY "All users can update their own notifications" ON notifications FO
 -- Settings Policies
 CREATE POLICY "Settings are viewable by all users" ON settings FOR SELECT USING (auth.uid() IS NOT NULL);
 CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (is_admin());
+
+-- Suppliers Policies
+CREATE POLICY "All authenticated users can view suppliers" ON suppliers FOR SELECT USING (auth.uid() IS NOT NULL);
+CREATE POLICY "Managers and Admins can manage suppliers" ON suppliers FOR ALL USING (
+  is_admin() OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'MANAGER')
+);
+
+-- Purchase Orders Policies
+CREATE POLICY "All authenticated users can view purchase orders" ON purchase_orders FOR SELECT USING (auth.uid() IS NOT NULL);
+CREATE POLICY "Managers and Admins can manage purchase orders" ON purchase_orders FOR ALL USING (
+  is_admin() OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'MANAGER')
+);
+
+-- Product Variants Policies
+CREATE POLICY "All users can view product variants" ON product_variants FOR SELECT USING (true);
+CREATE POLICY "Managers and Admins can manage product variants" ON product_variants FOR ALL USING (
+  is_admin() OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'MANAGER')
+);
 
 -- 16. Realtime
 ALTER PUBLICATION supabase_realtime ADD TABLE notifications;

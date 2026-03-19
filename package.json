@@ -1,7 +1,7 @@
 {
   "name": "pos-backend",
   "version": "1.0.0",
-  "description": "Standalone backend for POS Master Pro",
+  "description": "Standalone backend for Cortex POS",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
