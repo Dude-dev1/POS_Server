@@ -8,6 +8,7 @@ CREATE TYPE user_role AS ENUM ('ADMIN', 'MANAGER', 'CASHIER');
 CREATE TYPE payment_method AS ENUM ('CASH', 'MOBILE_MONEY', 'CARD');
 CREATE TYPE order_status AS ENUM ('COMPLETED', 'VOIDED', 'REFUNDED');
 CREATE TYPE notification_type AS ENUM ('LOW_STOCK', 'OUT_OF_STOCK', 'SYSTEM');
+CREATE TYPE shift_status AS ENUM ('OPEN', 'CLOSED');
 
 -- 3. Profiles Table
 CREATE TABLE profiles (
@@ -62,10 +63,26 @@ CREATE TABLE sales (
   tax_amount DECIMAL(12,2) NOT NULL,
   total_amount DECIMAL(12,2) NOT NULL,
   status order_status DEFAULT 'COMPLETED',
+  shift_id UUID REFERENCES shifts(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 7. Sale Items Table
+-- 7. Shifts Table
+CREATE TABLE shifts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  status shift_status DEFAULT 'OPEN',
+  opening_cash DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  closing_cash_actual DECIMAL(12,2),
+  closing_cash_expected DECIMAL(12,2),
+  start_time TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  end_time TIMESTAMPTZ,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 8. Sale Items Table
 CREATE TABLE sale_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   sale_id UUID REFERENCES sales(id) ON DELETE CASCADE NOT NULL,
@@ -176,6 +193,7 @@ CREATE TRIGGER update_suppliers_updated_at BEFORE UPDATE ON suppliers FOR EACH R
 CREATE TRIGGER update_purchase_orders_updated_at BEFORE UPDATE ON purchase_orders FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 CREATE TRIGGER update_product_variants_updated_at BEFORE UPDATE ON product_variants FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 CREATE TRIGGER update_settings_updated_at BEFORE UPDATE ON settings FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+CREATE TRIGGER update_shifts_updated_at BEFORE UPDATE ON shifts FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 -- Function to handle new user profile creation
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -227,6 +245,7 @@ ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE product_variants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE shifts ENABLE ROW LEVEL SECURITY;
 
 -- 14.5 Helper Function for RLS (to avoid recursion)
 CREATE OR REPLACE FUNCTION is_admin()
@@ -291,6 +310,13 @@ CREATE POLICY "Managers and Admins can manage purchase orders" ON purchase_order
 -- Product Variants Policies
 CREATE POLICY "All users can view product variants" ON product_variants FOR SELECT USING (true);
 CREATE POLICY "Managers and Admins can manage product variants" ON product_variants FOR ALL USING (
+  is_admin() OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'MANAGER')
+);
+
+-- Shifts Policies
+CREATE POLICY "All authenticated users can view shifts" ON shifts FOR SELECT USING (auth.uid() IS NOT NULL);
+CREATE POLICY "All authenticated users can manage their own shifts" ON shifts FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Managers and Admins can manage all shifts" ON shifts FOR ALL USING (
   is_admin() OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'MANAGER')
 );
 
