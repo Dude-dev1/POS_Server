@@ -9,7 +9,6 @@
 BEGIN;
 
 -- Step 1: Create backup of payments with MOBILE_MONEY (optional but recommended for audit)
--- This records which payments were migrated
 CREATE TABLE IF NOT EXISTS payment_migration_log (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   original_payment_id UUID NOT NULL,
@@ -19,43 +18,37 @@ CREATE TABLE IF NOT EXISTS payment_migration_log (
   notes TEXT
 );
 
--- Step 2: Log all MOBILE_MONEY payments before conversion
+-- Step 2: Log all unsupported payments (MOBILE_MONEY, PAYSTACK, etc.) before conversion
 INSERT INTO payment_migration_log (original_payment_id, original_method, new_method, notes)
-SELECT id, 'MOBILE_MONEY', 'CARD', 'Converted from MoMo during MOBILE_MONEY removal'
+SELECT id, method::text, 'CARD', 'Converted from ' || method::text || ' during legacy payment removal'
 FROM payments 
-WHERE method::text = 'MOBILE_MONEY';
+WHERE method::text NOT IN ('CASH', 'CARD', 'STORE_BALANCE');
 
 -- Step 3: Create new enum type without MOBILE_MONEY
 CREATE TYPE payment_method_new AS ENUM ('CASH', 'CARD', 'STORE_BALANCE');
 
--- Step 4: Convert MOBILE_MONEY payments to CARD
-UPDATE payments 
-SET method = 'CARD'::payment_method_new 
-WHERE method::text = 'MOBILE_MONEY';
-
--- Step 5: Alter the payments table column type
+-- Step 4: Change the type of the column AND update the data simultaneously
 ALTER TABLE payments 
-ALTER COLUMN method TYPE payment_method_new USING method::text::payment_method_new;
+  ALTER COLUMN method TYPE payment_method_new 
+  USING CASE 
+    WHEN method::text IN ('CASH', 'CARD', 'STORE_BALANCE') THEN method::text::payment_method_new
+    ELSE 'CARD'::payment_method_new
+  END;
 
--- Step 6: Drop old enum and rename new one
+-- Step 5: Drop the old enum and rename the new one
 DROP TYPE payment_method;
 ALTER TYPE payment_method_new RENAME TO payment_method;
 
--- Step 7: Add a flag to track migrated payments (optional but useful for reporting)
+-- Step 6: Add a flag to track migrated payments
 ALTER TABLE payments 
 ADD COLUMN IF NOT EXISTS was_momo_payment BOOLEAN DEFAULT FALSE;
 
--- Mark all migrated payments
+-- Step 7: Mark all migrated payments
 UPDATE payments 
 SET was_momo_payment = TRUE 
 WHERE id IN (SELECT original_payment_id FROM payment_migration_log);
 
-COMMIT;
+COMMIT; 
 
--- Rollback instructions (if needed):
--- You will need to manually restore the MOBILE_MONEY enum value
--- and restore the original payment method values from the payment_migration_log table.
---
--- Query to check migrated payments:
 -- SELECT * FROM payment_migration_log;
 -- SELECT COUNT(*) as total_momo_payments_converted FROM payments WHERE was_momo_payment = TRUE;
