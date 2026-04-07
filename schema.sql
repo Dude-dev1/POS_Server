@@ -5,7 +5,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- 2. Create Enums
 CREATE TYPE user_role AS ENUM ('ADMIN', 'MANAGER', 'CASHIER');
-CREATE TYPE payment_method AS ENUM ('CASH', 'MOBILE_MONEY', 'CARD');
+CREATE TYPE payment_method AS ENUM ('CASH', 'CARD', 'STORE_BALANCE');
 CREATE TYPE order_status AS ENUM ('COMPLETED', 'VOIDED', 'REFUNDED');
 CREATE TYPE notification_type AS ENUM ('LOW_STOCK', 'OUT_OF_STOCK', 'SYSTEM');
 CREATE TYPE shift_status AS ENUM ('OPEN', 'CLOSED');
